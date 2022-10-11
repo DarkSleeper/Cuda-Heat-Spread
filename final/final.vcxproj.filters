@@ -1,0 +1,46 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CudaCompile Include="kernel.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="common">
+      <UniqueIdentifier>{bec217c5-74cc-46b4-a192-9f5d6cd56548}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="model_loader">
+      <UniqueIdentifier>{ae855d50-c09e-4ee1-a01f-3433b7d8902a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include">
+      <UniqueIdentifier>{ab75aac7-ad0a-4003-a3eb-cb157453967b}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="common\book.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\cpu_anim.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\cpu_bitmap.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\gl_helper.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\gpu_anim.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="model_loader.h">
+      <Filter>model_loader</Filter>
+    </ClInclude>
+    <ClInclude Include="camera.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="model_loader.cpp">
+      <Filter>model_loader</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\glad\src\glad.c">
+      <Filter>include</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
