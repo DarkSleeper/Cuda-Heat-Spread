@@ -45,8 +45,7 @@ const unsigned int SCR_HEIGHT = 1024;
 
 GLuint vao[num_vao] = {0};
 GLuint vbo[num_vbo] = {0};
-cudaGraphicsResource* cuda_vert;
-cudaGraphicsResource* cuda_color;
+cudaGraphicsResource* cuda_color_out;
 
 // camera
 Camera camera(glm::vec3(0.0f, 0.0f, 20.0f));
@@ -101,7 +100,6 @@ void setupVertices(ImportedModel& myModel)
 	glGenBuffers(num_vbo, vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
 	glBufferData(GL_ARRAY_BUFFER, pValues.size() * sizeof(float), &(pValues[0]), GL_STATIC_DRAW);
-	cudaGraphicsGLRegisterBuffer(&cuda_vert, vbo[0], cudaGraphicsRegisterFlagsNone);
 
 	//uv
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
@@ -118,7 +116,7 @@ void setupVertices(ImportedModel& myModel)
 	//color
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[3]);
 	glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(float), &(colors[0]), GL_STATIC_DRAW);
-	cudaGraphicsGLRegisterBuffer(&cuda_color, vbo[3], cudaGraphicsRegisterFlagsNone);
+	cudaGraphicsGLRegisterBuffer(&cuda_color_out, vbo[3], cudaGraphicsRegisterFlagsNone);
 
 	// 解绑VAO和VBO
 	glBindVertexArray(0);
@@ -132,22 +130,20 @@ __global__ void set_color(int vertex_num, float4* colors) {
 	}
 }
 
-void heat_compute(int vertex_num) {
+void color_set(int vertex_num) {
 	// 在CUDA中映射资源，锁定资源
-	cudaGraphicsMapResources(1, &cuda_vert, 0);
-	cudaGraphicsMapResources(1, &cuda_color, 0);
+	cudaGraphicsMapResources(1, &cuda_color_out, 0);
 
 	float4* device_color;
 	size_t size = vertex_num;
 	// 获取操作资源的指针，以便在CUDA核函数中使用
-	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color);
+	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color_out);
 
 	set_color <<< vertex_num / 256 + 1, 256 >>> (vertex_num, device_color);
 
 	// 处理完了即可解除资源锁定，OpenGL可以开始利用处理结果了。
 	// 注意在CUDA处理过程中，OpenGL如果访问这些锁定的资源会出错。
-	cudaGraphicsUnmapResources(1, &cuda_vert, 0);
-	cudaGraphicsUnmapResources(1, &cuda_color, 0);
+	cudaGraphicsUnmapResources(1, &cuda_color_out, 0);
 }
 
 int main(void) {
@@ -220,6 +216,13 @@ int main(void) {
 	ImportedModel my_model("runtime/model/craneo_low.OBJ");
 	setupVertices(my_model);
 
+	//get cuda resources ready: origin_vertices, origin_colors, index_maps, adj_mat
+	auto origin_vertices = my_model.getOriginVertices();
+	auto vert_indexes = my_model.getVertIndexes();
+	auto adj_map = my_model.getAdjMat();
+	vector<float> origin_colors;
+	origin_colors.resize(4 * origin_vertices.size(), 1.0f);
+
 	//set light
 	glm::vec3 direct_light = glm::vec3(0, 0, -1);
 
@@ -248,8 +251,11 @@ int main(void) {
 
 		int vert_num = my_model.getNumVertices();
 		/* Cuda here */
+		//heat compute
+
+		
 		//dynamically use gl resource through cuda to change its values
-		heat_compute(vert_num);
+		color_set(vert_num);
 
 		/* Render here */
 		auto current_time = (float)glfwGetTime();
