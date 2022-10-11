@@ -220,8 +220,25 @@ int main(void) {
 	auto origin_vertices = my_model.getOriginVertices();
 	auto vert_indexes = my_model.getVertIndexes();
 	auto adj_map = my_model.getAdjMat();
-	vector<float> origin_colors;
-	origin_colors.resize(4 * origin_vertices.size(), 1.0f);
+	vector<float4> origin_colors;
+	origin_colors.resize(origin_vertices.size(), float4{1.0f, 1.0f, 1.0f, 1.0f});
+
+	std::vector<float3> host_origin_verts;
+	for (auto& v : origin_vertices) {
+		host_origin_verts.push_back(float3{v.x, v.y, v.z});
+	}
+
+	float3* dev_origin_verts;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_origin_verts, host_origin_verts.size() * sizeof(float3)));
+	HANDLE_ERROR(cudaMemcpy(dev_origin_verts, &host_origin_verts[0], host_origin_verts.size() * sizeof(float3), cudaMemcpyHostToDevice));
+
+	int* dev_vert_indexes;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_vert_indexes, vert_indexes.size() * sizeof(int)));
+	HANDLE_ERROR(cudaMemcpy(dev_vert_indexes, &vert_indexes[0], vert_indexes.size() * sizeof(int), cudaMemcpyHostToDevice));
+
+	float4* dev_origin_colors;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_origin_colors, origin_colors.size() * sizeof(float4)));
+	HANDLE_ERROR(cudaMemcpy(dev_origin_colors, &origin_colors[0], origin_colors.size() * sizeof(float4), cudaMemcpyHostToDevice));
 
 	//set light
 	glm::vec3 direct_light = glm::vec3(0, 0, -1);
@@ -304,6 +321,10 @@ int main(void) {
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
+
+	HANDLE_ERROR(cudaFree(dev_origin_verts));
+	HANDLE_ERROR(cudaFree(dev_vert_indexes));
+	HANDLE_ERROR(cudaFree(dev_origin_colors));
 	return 0;
 }
 
