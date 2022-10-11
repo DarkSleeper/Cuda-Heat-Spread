@@ -40,12 +40,14 @@ const float pai = 3.1415926f;
 const int num_vao = 1;
 const int num_vbo = 4;
 
-const unsigned int SCR_WIDTH = 1280;
-const unsigned int SCR_HEIGHT = 1024;
+const unsigned int SCR_WIDTH = 1920;
+const unsigned int SCR_HEIGHT = 1080;
 
 GLuint vao[num_vao] = {0};
 GLuint vbo[num_vbo] = {0};
-cudaGraphicsResource* cuda_color_out;
+GLuint ebo = 0;
+cudaGraphicsResource* cuda_vert;
+cudaGraphicsResource* cuda_color;
 
 // camera
 Camera camera(glm::vec3(0.0f, 0.0f, 20.0f));
@@ -56,6 +58,9 @@ bool firstMouse = true;
 // timing
 float delta_time = 1.0f;
 float last_time = 0.0f;
+
+int vertex_num;
+int triangle_vertex_num;
 
 float toRadians(float degrees)
 {
@@ -71,7 +76,7 @@ void init_shader(const char* vertexPath, const char* fragmentPath, GLuint& ID);
 
 void setupVertices(ImportedModel& myModel)
 {
-	vector<glm::vec3> vert = myModel.getVertices();
+	vector<glm::vec3> vert = myModel.getOriginVertices();
 	vector<glm::vec2> text = myModel.getTextureCoords();
 	vector<glm::vec3> norm = myModel.getNormals();
 
@@ -79,7 +84,8 @@ void setupVertices(ImportedModel& myModel)
 	vector<float> tValues;
 	vector<float> nValues;
 
-	for (int i = 0; i < myModel.getNumVertices(); i++)
+	vertex_num = myModel.getNumVertices();
+	for (int i = 0; i < vertex_num; i++)
 	{
 		pValues.push_back(vert[i].x);
 		pValues.push_back(vert[i].y);
@@ -93,13 +99,22 @@ void setupVertices(ImportedModel& myModel)
 		nValues.push_back(norm[i].z);
 	}
 
+	auto triangle_indexes = myModel.getTriangleIndexes();
+	triangle_vertex_num = triangle_indexes.size();
+
 	glGenVertexArrays(num_vao, vao);
 	glBindVertexArray(vao[0]);
+
+	// indexes
+	glGenBuffers(1, &ebo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangle_vertex_num * sizeof(unsigned int), &(triangle_indexes[0]), GL_STATIC_DRAW);
 
 	//vert
 	glGenBuffers(num_vbo, vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
 	glBufferData(GL_ARRAY_BUFFER, pValues.size() * sizeof(float), &(pValues[0]), GL_STATIC_DRAW);
+	cudaGraphicsGLRegisterBuffer(&cuda_vert, vbo[0], cudaGraphicsRegisterFlagsNone);
 
 	//uv
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
@@ -109,41 +124,44 @@ void setupVertices(ImportedModel& myModel)
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[2]);
 	glBufferData(GL_ARRAY_BUFFER, nValues.size() * sizeof(float), &(nValues[0]), GL_STATIC_DRAW);
 
-	int vertex_num = vert.size();
-	vector<float> colors;
-	colors.resize(4 * vertex_num, 1.0f);
+	vector<float4> colors;
+	colors.resize(vertex_num, float4{0.0f, 1.0f, 0.0f, 1.0f});
 
 	//color
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[3]);
-	glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(float), &(colors[0]), GL_STATIC_DRAW);
-	cudaGraphicsGLRegisterBuffer(&cuda_color_out, vbo[3], cudaGraphicsRegisterFlagsNone);
+	glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(float4), &(colors[0]), GL_STATIC_DRAW);
+	cudaGraphicsGLRegisterBuffer(&cuda_color, vbo[3], cudaGraphicsRegisterFlagsNone);
 
-	// 解绑VAO和VBO
-	glBindVertexArray(0);
+	// 解绑VAO和VBO， 顺序很重要
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
 }
 
 __global__ void set_color(int vertex_num, float4* colors) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
-		colors[index].x = 0.f;
+		colors[index].z = 1.f;
 	}
 }
 
-void color_set(int vertex_num) {
+void heat_compute() {
 	// 在CUDA中映射资源，锁定资源
-	cudaGraphicsMapResources(1, &cuda_color_out, 0);
+	cudaGraphicsMapResources(1, &cuda_vert, 0);
+	cudaGraphicsMapResources(1, &cuda_color, 0);
 
-	float4* device_color;
 	size_t size = vertex_num;
-	// 获取操作资源的指针，以便在CUDA核函数中使用
-	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color_out);
+
+	float3* device_vert;
+	float4* device_color;
+	cudaGraphicsResourceGetMappedPointer((void**)&device_vert, &size, cuda_vert);
+	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color);
 
 	set_color <<< vertex_num / 256 + 1, 256 >>> (vertex_num, device_color);
 
 	// 处理完了即可解除资源锁定，OpenGL可以开始利用处理结果了。
 	// 注意在CUDA处理过程中，OpenGL如果访问这些锁定的资源会出错。
-	cudaGraphicsUnmapResources(1, &cuda_color_out, 0);
+	cudaGraphicsUnmapResources(1, &cuda_vert, 0);
+	cudaGraphicsUnmapResources(1, &cuda_color, 0);
 }
 
 int main(void) {
@@ -213,32 +231,17 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/craneo_low.OBJ");
+	ImportedModel my_model("runtime/model/craneo_high.OBJ");
 	setupVertices(my_model);
 
-	//get cuda resources ready: origin_vertices, origin_colors, index_maps, adj_mat
-	auto origin_vertices = my_model.getOriginVertices();
-	auto vert_indexes = my_model.getVertIndexes();
+	//get cuda resources ready
+	//auto origin_vertices = my_model.getOriginVertices();
+	//todo : use 1-demention array to present adj: with adj_idx[i] meaning vertice i's neighbours starts at adj_array[adj_idx[i]] place
 	auto adj_map = my_model.getAdjMat();
-	vector<float4> origin_colors;
-	origin_colors.resize(origin_vertices.size(), float4{1.0f, 1.0f, 1.0f, 1.0f});
 
-	std::vector<float3> host_origin_verts;
-	for (auto& v : origin_vertices) {
-		host_origin_verts.push_back(float3{v.x, v.y, v.z});
-	}
-
-	float3* dev_origin_verts;
-	HANDLE_ERROR(cudaMalloc((void**)&dev_origin_verts, host_origin_verts.size() * sizeof(float3)));
-	HANDLE_ERROR(cudaMemcpy(dev_origin_verts, &host_origin_verts[0], host_origin_verts.size() * sizeof(float3), cudaMemcpyHostToDevice));
-
-	int* dev_vert_indexes;
-	HANDLE_ERROR(cudaMalloc((void**)&dev_vert_indexes, vert_indexes.size() * sizeof(int)));
-	HANDLE_ERROR(cudaMemcpy(dev_vert_indexes, &vert_indexes[0], vert_indexes.size() * sizeof(int), cudaMemcpyHostToDevice));
-
-	float4* dev_origin_colors;
-	HANDLE_ERROR(cudaMalloc((void**)&dev_origin_colors, origin_colors.size() * sizeof(float4)));
-	HANDLE_ERROR(cudaMemcpy(dev_origin_colors, &origin_colors[0], origin_colors.size() * sizeof(float4), cudaMemcpyHostToDevice));
+	//float3* dev_origin_verts;
+	//HANDLE_ERROR(cudaMalloc((void**)&dev_origin_verts, host_origin_verts.size() * sizeof(float3)));
+	//HANDLE_ERROR(cudaMemcpy(dev_origin_verts, &host_origin_verts[0], host_origin_verts.size() * sizeof(float3), cudaMemcpyHostToDevice));
 
 	//set light
 	glm::vec3 direct_light = glm::vec3(0, 0, -1);
@@ -266,13 +269,9 @@ int main(void) {
 		glm::mat4 view_mat = camera.GetViewMatrix();
 		glm::mat4 inv_world_mat = glm::inverse(view_mat);
 
-		int vert_num = my_model.getNumVertices();
 		/* Cuda here */
-		//heat compute
-
-		
 		//dynamically use gl resource through cuda to change its values
-		color_set(vert_num);
+		heat_compute();
 
 		/* Render here */
 		auto current_time = (float)glfwGetTime();
@@ -310,7 +309,7 @@ int main(void) {
 		glEnable(GL_DEPTH_TEST);
 		//指定用于深度缓冲比较值；
 		glDepthFunc(GL_LEQUAL);
-		glDrawArrays(GL_TRIANGLES, 0, vert_num);
+		glDrawElements(GL_TRIANGLES, triangle_vertex_num, GL_UNSIGNED_INT, 0);
 
 		/* Swap front and back buffers */
 		glfwSwapBuffers(window);
@@ -322,9 +321,7 @@ int main(void) {
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
-	HANDLE_ERROR(cudaFree(dev_origin_verts));
-	HANDLE_ERROR(cudaFree(dev_vert_indexes));
-	HANDLE_ERROR(cudaFree(dev_origin_colors));
+	//HANDLE_ERROR(cudaFree(dev_origin_verts));
 	return 0;
 }
 

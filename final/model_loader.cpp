@@ -16,23 +16,20 @@ ImportedModel::ImportedModel(const char* filePath)
 
 	_numVertices = modelImporter.getNumVertices();
 
+	_triangle_indexes = modelImporter.getTriangleVertices();
+
 	vector<float> origin_verts = modelImporter.getOriginVertices();
-	vector<float> verts = modelImporter.getVertices();
 	vector<float> tcs = modelImporter.getTextureCoordinates();
 	vector<float> normals = modelImporter.getNormals();
-	_vert_indexes = modelImporter.getVertIdexes();
 
 	for (int i = 0; i < _numVertices; i++)
 	{
-		_vertices.push_back(glm::vec3(verts[i * 3 + 0], verts[i * 3 + 1], verts[i * 3 + 2]));
+		_origin_vertices.push_back(glm::vec3(origin_verts[i * 3 + 0], origin_verts[i * 3 + 1], origin_verts[i * 3 + 2]));
 		_texCoords.push_back(glm::vec2(tcs[i * 2 + 0], tcs[i * 2 + 1]));
 		_normalVecs.push_back(glm::vec3(normals[i * 3 + 0], normals[i * 3 + 1], normals[i * 3 + 2]));
 	}
 
-	int num_origin = origin_verts.size() / 3;
-	for (int i = 0; i < num_origin; i++) {
-		_origin_vertices.push_back(glm::vec3(origin_verts[i * 3 + 0], origin_verts[i * 3 + 1], origin_verts[i * 3 + 2]));
-	}
+	int num_origin = _numVertices;
 	_adj_mat.resize(num_origin, vector<int>());
 	for (auto& iter: adj_init) {
 		int i = iter.first;
@@ -47,9 +44,9 @@ int ImportedModel::getNumVertices()
 	return std::move(_numVertices);
 }
 
-std::vector<glm::vec3> ImportedModel::getVertices()
+std::vector<int> ImportedModel::getTriangleIndexes()
 {
-	return std::move(_vertices);
+	return std::move(_triangle_indexes);
 }
 
 std::vector<glm::vec2> ImportedModel::getTextureCoords()
@@ -72,11 +69,6 @@ std::vector<glm::vec3> ImportedModel::getOriginVertices()
 	return std::move(_origin_vertices);
 }
 
-std::vector<int> ImportedModel::getVertIndexes() 
-{
-	return _vert_indexes;
-}
-
 /// <summary>
 /// ModelImporter implement
 /// </summary>
@@ -93,6 +85,7 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 	ifstream fileStream(filePath, ios::in);
 	string line = "";
 
+	bool init_face = true;
 	while (!fileStream.eof())
 	{
 		getline(fileStream, line);
@@ -122,6 +115,11 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 		}
 		if (line.compare(0, 1, "f") == 0)  //原书有误
 		{
+			if (init_face) {
+				_textureCoords.resize(_vertVals.size() / 3 * 2);
+				_normals.resize(_vertVals.size() / 3 * 3);
+				init_face = false;
+			}
 			string oneCorner, v, t, n;
 			std::stringstream ss(line.erase(0, 2));
 			int idx[3];
@@ -136,22 +134,18 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 
 				idx[i] = stoi(v) - 1;
 
-				_vertIndexes.push_back(idx[i]);
-
 				int vertRef = idx[i] * 3;   //为什么要 -1？
 				int tcRef = (stoi(t) - 1) * 2;
 				int normRef = (stoi(n) - 1) * 3;
 
-				_triangleVerts.push_back(_vertVals[vertRef]);
-				_triangleVerts.push_back(_vertVals[vertRef + 1]);
-				_triangleVerts.push_back(_vertVals[vertRef + 2]);
+				_triangleVerts.push_back(idx[i]);
 
-				_textureCoords.push_back(_stVals[tcRef]);
-				_textureCoords.push_back(_stVals[tcRef + 1]);
+				_textureCoords[idx[i] * 2 + 0] = _stVals[tcRef];
+				_textureCoords[idx[i] * 2 + 1] = _stVals[tcRef + 1];
 
-				_normals.push_back(_normVals[normRef]);
-				_normals.push_back(_normVals[normRef + 1]);
-				_normals.push_back(_normVals[normRef + 2]);
+				_normals[idx[i] * 3 + 0] = _normVals[normRef];
+				_normals[idx[i] * 3 + 1] = _normVals[normRef + 1];
+				_normals[idx[i] * 3 + 2] = _normVals[normRef + 2];
 			}
 
 			//这里adj插入的是_vertVals之间的关系，而不是_triangleVerts之间的关系！！！ todo
@@ -168,10 +162,10 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 
 int ModelImporter::getNumVertices()
 {
-	return (_triangleVerts.size() / 3);
+	return (_vertVals.size() / 3);
 }
 
-std::vector<float> ModelImporter::getVertices()
+std::vector<int> ModelImporter::getTriangleVertices()
 {
 	return std::move(_triangleVerts);
 }
@@ -189,9 +183,4 @@ std::vector<float> ModelImporter::getNormals()
 std::vector<float> ModelImporter::getOriginVertices() 
 {
 	return std::move(_vertVals);
-}
-
-std::vector<int> ModelImporter::getVertIdexes()
-{
-	return std::move(_vertIndexes);
 }
