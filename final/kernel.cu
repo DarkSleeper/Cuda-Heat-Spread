@@ -27,6 +27,12 @@
 #include "model_loader.h"
 #include "camera.h"
 
+#define MAX_TEMPER 100.0
+#define MIN_TEMPER 0.0
+
+__constant__ float dev_max_temper[1];
+__constant__ float dev_min_temper[1];
+
 const float pai = 3.1415926f;
 
 const int num_vao = 1;
@@ -129,24 +135,30 @@ void setupVertices(ImportedModel& myModel)
 	glBindVertexArray(0);
 }
 
-__global__ void init_color(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float4* colors) {
+__global__ void init_color(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
-		colors[index].x = 0.f;
-		colors[index].y = 1.f;
-		colors[index].z = 1.f;
-		colors[index].w = 1.f;
+
 	}
 }
 
-__global__ void set_color(int vertex_num, float4* src_color, float4* dst_color) {
+__global__ void set_color(int vertex_num, float* temper, float4* color) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
-		dst_color[index] = src_color[index];
+		float a = (temper[index] - dev_min_temper[0]) / (dev_max_temper[0] - dev_min_temper[0]);
+		if (a > 0.5) {
+			color[index].x = 1;
+			color[index].y = (1 - a) / a;
+		} else {
+			color[index].x = a / (1 - a);
+			color[index].y = 1;
+		}
+		color[index].z = 0.f;
+		color[index].w = 1.f;
 	}
 }
 
-void heat_compute(int* dev_adj_index, int* dev_adj_array, float4* dev_dst_color) {
+void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper, float* dev_dst_temper) {
 	// 在CUDA中映射资源，锁定资源
 	cudaGraphicsMapResources(1, &cuda_vert, 0);
 	cudaGraphicsMapResources(1, &cuda_color, 0);
@@ -158,9 +170,9 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float4* dev_dst_color)
 	cudaGraphicsResourceGetMappedPointer((void**)&device_vert, &size, cuda_vert);
 	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color);
 
-	init_color<<< vertex_num / 256 + 1, 256 >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_dst_color);
+	init_color<<< vertex_num / 256 + 1, 256 >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
 
-	set_color<<< vertex_num / 256 + 1, 256 >>> (vertex_num, dev_dst_color, device_color);
+	set_color<<< vertex_num / 256 + 1, 256 >>> (vertex_num, dev_dst_temper, device_color);
 
 	// 处理完了即可解除资源锁定，OpenGL可以开始利用处理结果了。
 	// 注意在CUDA处理过程中，OpenGL如果访问这些锁定的资源会出错。
@@ -227,6 +239,11 @@ int main(void) {
 	setupVertices(my_model);
 
 	//get cuda resources ready
+	float max_temper = MAX_TEMPER;
+	float min_temper = MIN_TEMPER;
+	HANDLE_ERROR(cudaMemcpyToSymbol(dev_max_temper, &max_temper, sizeof(float)));
+	HANDLE_ERROR(cudaMemcpyToSymbol(dev_min_temper, &min_temper, sizeof(float)));
+
 	//use 1-demention array to present adj: with adj_idx[i] meaning vertice i's neighbours starts at adj_array[adj_idx[i]] place
 	auto adj_map = my_model.getAdjMat();
 	vector<int> adj_index(vertex_num, 0);
@@ -246,10 +263,15 @@ int main(void) {
 	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_array, adj_array.size() * sizeof(int)));
 	HANDLE_ERROR(cudaMemcpy(dev_adj_array, &adj_array[0], adj_array.size() * sizeof(int), cudaMemcpyHostToDevice));
 
-	vector<float4> dst_color(vertex_num);
-	float4* dev_dst_color;
-	HANDLE_ERROR(cudaMalloc((void**)&dev_dst_color, vertex_num * sizeof(float4)));
-	HANDLE_ERROR(cudaMemcpy(dev_dst_color, &dst_color[0], vertex_num * sizeof(float4), cudaMemcpyHostToDevice));
+	vector<float> src_temper(vertex_num, MIN_TEMPER);
+	float* dev_src_temper;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_src_temper, vertex_num * sizeof(float)));
+	HANDLE_ERROR(cudaMemcpy(dev_src_temper, &src_temper[0], vertex_num * sizeof(float), cudaMemcpyHostToDevice));
+
+	vector<float> dst_temper(vertex_num, MIN_TEMPER);
+	float* dev_dst_temper;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_dst_temper, vertex_num * sizeof(float)));
+	HANDLE_ERROR(cudaMemcpy(dev_dst_temper, &dst_temper[0], vertex_num * sizeof(float), cudaMemcpyHostToDevice));
 
 
 	//set light
@@ -280,7 +302,7 @@ int main(void) {
 
 		/* Cuda here */
 		//dynamically use gl resource through cuda to change its values
-		heat_compute(dev_adj_index, dev_adj_array, dev_dst_color);
+		heat_compute(dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
 
 		/* Render here */
 		auto current_time = (float)glfwGetTime();
@@ -332,7 +354,8 @@ int main(void) {
 
 	HANDLE_ERROR(cudaFree(dev_adj_index));
 	HANDLE_ERROR(cudaFree(dev_adj_array));
-	HANDLE_ERROR(cudaFree(dev_dst_color));
+	HANDLE_ERROR(cudaFree(dev_src_temper));
+	HANDLE_ERROR(cudaFree(dev_dst_temper));
 
 	return 0;
 }
