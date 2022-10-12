@@ -56,9 +56,7 @@ float lastX = (float)SCR_WIDTH / 2.0;
 float lastY = (float)SCR_HEIGHT / 2.0;
 bool firstMouse = true;
 
-// timing
-float delta_time = 1.0f;
-float last_time = 0.0f;
+float speed = 1.f;
 
 int vertex_num;
 int triangle_vertex_num;
@@ -317,17 +315,23 @@ int main(void) {
 	};
 
 	bool use_src = true;
+	// timing
+	float delta_time = 0.0f;
+	float last_time = 0.0f;
 	/* Loop until the user closes the window */
 	while (!glfwWindowShouldClose(window))
 	{
-		//if (last_time == 0.0) {
-		//	delta_time = 0.0;
-		//	last_time = current_time;
-		//} else {
-		//	delta_time = current_time - last_time;
-		//	//std::cout<<"delta_time:"<<delta_time<<std::endl;
-		//	last_time = current_time;
-		//}
+		//delta time means time per frame
+		auto current_time = (float)glfwGetTime();
+		if (last_time == 0.0) {
+			delta_time = 0.0;
+			last_time = current_time;
+		} else {
+			delta_time = current_time - last_time;
+			//std::cout<<"delta_time:"<<delta_time<<std::endl;
+			last_time = current_time;
+		}
+
 		processInput(window);
 		glm::mat4 view_mat = camera.GetViewMatrix();
 		glm::mat4 inv_world_mat = glm::inverse(view_mat);
@@ -342,7 +346,6 @@ int main(void) {
 		use_src = !use_src;
 
 		/* Render here */
-		auto current_time = (float)glfwGetTime();
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.f);
@@ -498,13 +501,13 @@ void processInput(GLFWwindow* window)
 		glfwSetWindowShouldClose(window, true);
 
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-		camera.ProcessKeyboard(FORWARD, delta_time);
+		camera.ProcessKeyboard(FORWARD, speed);
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-		camera.ProcessKeyboard(BACKWARD, delta_time);
+		camera.ProcessKeyboard(BACKWARD, speed);
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-		camera.ProcessKeyboard(LEFT, delta_time);
+		camera.ProcessKeyboard(LEFT, speed);
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-		camera.ProcessKeyboard(RIGHT, delta_time);
+		camera.ProcessKeyboard(RIGHT, speed);
 }
 
 
