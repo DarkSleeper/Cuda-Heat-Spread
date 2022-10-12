@@ -27,14 +27,6 @@
 #include "model_loader.h"
 #include "camera.h"
 
-__device__ int addem(int a, int b) {
-    return a + b;
-}
-
-__global__ void add(int a, int b, int* c) {
-    *c = addem(a, b);
-}
-
 const float pai = 3.1415926f;
 
 const int num_vao = 1;
@@ -137,10 +129,20 @@ void setupVertices(ImportedModel& myModel)
 	glBindVertexArray(0);
 }
 
-__global__ void set_color(int vertex_num, float4* colors) {
+__global__ void init_color(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float4* colors) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
+		colors[index].x = 0.f;
+		colors[index].y = 1.f;
 		colors[index].z = 1.f;
+		colors[index].w = 1.f;
+	}
+}
+
+__global__ void set_color(int vertex_num, float4* src_color, float4* dst_color) {
+	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	if (index < vertex_num) {
+		dst_color[index] = src_color[index];
 	}
 }
 
@@ -156,7 +158,9 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float4* dev_dst_color)
 	cudaGraphicsResourceGetMappedPointer((void**)&device_vert, &size, cuda_vert);
 	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color);
 
-	set_color <<< vertex_num / 256 + 1, 256 >>> (vertex_num, device_color);
+	init_color<<< vertex_num / 256 + 1, 256 >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_dst_color);
+
+	set_color<<< vertex_num / 256 + 1, 256 >>> (vertex_num, dev_dst_color, device_color);
 
 	// 处理完了即可解除资源锁定，OpenGL可以开始利用处理结果了。
 	// 注意在CUDA处理过程中，OpenGL如果访问这些锁定的资源会出错。
@@ -165,18 +169,6 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float4* dev_dst_color)
 }
 
 int main(void) {
-    int c;
-    int* dev_c;
-    HANDLE_ERROR(cudaMalloc((void**)&dev_c, sizeof(int)));
-
-    add<<< 1, 1 >>>(2, 7, dev_c);
-
-    HANDLE_ERROR(cudaMemcpy(&c, dev_c, sizeof(int),
-        cudaMemcpyDeviceToHost));
-    printf("2 + 7 = %d\n", c);
-    HANDLE_ERROR(cudaFree(dev_c));
-
-	//ImportedModel myModel("runtime/model/craneo_low.OBJ");
 
 	GLFWwindow* window;
 
