@@ -49,12 +49,12 @@ cudaGraphicsResource* cuda_vert;
 cudaGraphicsResource* cuda_color;
 
 // camera
-Camera camera(glm::vec3(0.0f, 0.0f, 20.0f));
+Camera camera(glm::vec3(0.0f, 0.0f, 10.0f));
 float lastX = (float)SCR_WIDTH / 2.0;
 float lastY = (float)SCR_HEIGHT / 2.0;
 bool firstMouse = true;
 
-float speed = 1.f;
+float speed = 0.016f;
 
 int vertex_num;
 int triangle_vertex_num;
@@ -156,17 +156,15 @@ __global__ void heat_compute(int vertex_num, float3* vertices, int* adj_index, i
 		float3 src_pos = vertices[index];
 
 		float rise_t = 0;
-		if (end - start > 0) {
-			for (int i = start; i < end; i++) {
-				int neighbour = adj_array[i];
-				float dt = src_temper[neighbour] - src_t;
-				float dis = get_distance(vertices[neighbour], src_pos) + 1;
+		for (int i = start; i < end; i++) {
+			int neighbour = adj_array[i];
+			float dt = src_temper[neighbour] - src_t;
+			float dis = get_distance(vertices[neighbour], src_pos) + 1;
 
-				float speed = 1 / dis * abs(dt) / (MAX_TEMPER - MIN_TEMPER);
-				rise_t += speed * dt;
-			}
-			rise_t /= end - start;
+			float speed = 1 / dis * abs(dt) / (MAX_TEMPER - MIN_TEMPER);
+			rise_t += speed * dt;
 		}
+		rise_t /= end - start + 1; //dt0 = 0 for itself
 		dst_temper[index] = src_t + rise_t;
 	}
 }
@@ -212,6 +210,9 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 }
 
 int main(void) {
+	cudaEvent_t     start, stop;
+	HANDLE_ERROR(cudaEventCreate(&start));
+	HANDLE_ERROR(cudaEventCreate(&stop));
 
 	srand((unsigned)time(NULL));
 
@@ -259,7 +260,8 @@ int main(void) {
 	glm::mat4 projection_mat = glm::perspective(toRadians(45.f), aspect, 0.01f, 1000.f);
 	glm::mat4 model_mat;
 	model_mat = glm::identity<glm::mat4>();
-	model_mat = glm::translate(model_mat, glm::vec3(0.0f, -200.0f, 0.0f));
+	model_mat = glm::rotate(model_mat, toRadians(180.f), glm::vec3(0.0f, 1.0f, 0.0f));
+	model_mat = glm::rotate(model_mat, toRadians(90.f), glm::vec3(1.0f, 0.0f, 0.0f));
 
 	//set shader
 	auto vertex_path = "runtime/shader/opacity.vs";
@@ -268,7 +270,7 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/craneo_high.OBJ");
+	ImportedModel my_model("runtime/model/snow.obj");
 	setupVertices(my_model);
 
 	//get cuda resources ready
@@ -312,7 +314,7 @@ int main(void) {
 
 
 	//set light
-	glm::vec3 direct_light = glm::vec3(0, 0, -1);
+	glm::vec3 direct_light = glm::vec3(1, 1, -1);
 
 	//prepare funcs
 	auto setMat4 = [&](const std::string& name, const glm::mat4& mat) -> void {
@@ -326,6 +328,7 @@ int main(void) {
 	// timing
 	float delta_time = 0.0f;
 	float last_time = 0.0f;
+	int frame_cnt = 0;
 	/* Loop until the user closes the window */
 	while (!glfwWindowShouldClose(window))
 	{
@@ -346,12 +349,25 @@ int main(void) {
 
 		/* Cuda here */
 		//dynamically use gl resource through cuda to change its values
+
+		HANDLE_ERROR(cudaEventRecord(start, 0));
 		if (use_src) {
 			heat_compute(dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
 		} else {
 			heat_compute(dev_adj_index, dev_adj_array, dev_dst_temper, dev_src_temper);
 		}
 		use_src = !use_src;
+		HANDLE_ERROR(cudaEventRecord(stop, 0));
+		HANDLE_ERROR(cudaEventSynchronize(stop));
+		float   elapsedTime;
+		HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
+		//printf("Time to compute heat:  %3.1f ms\n", elapsedTime);
+
+		//show result
+		if (frame_cnt % 10 == 0) {
+			string title = "heat   delta_time: " + to_string(delta_time) + "  cuda_time: " + to_string(elapsedTime);
+			glfwSetWindowTitle(window, title.data());
+		}
 
 		/* Render here */
 
@@ -395,6 +411,8 @@ int main(void) {
 
 		/* Poll for and process events */
 		glfwPollEvents();
+
+		frame_cnt++;
 	}
 
 	glfwDestroyWindow(window);
@@ -404,6 +422,9 @@ int main(void) {
 	HANDLE_ERROR(cudaFree(dev_adj_array));
 	HANDLE_ERROR(cudaFree(dev_src_temper));
 	HANDLE_ERROR(cudaFree(dev_dst_temper));
+
+	HANDLE_ERROR(cudaEventDestroy(start));
+	HANDLE_ERROR(cudaEventDestroy(stop));
 
 	return 0;
 }
