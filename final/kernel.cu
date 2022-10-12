@@ -17,6 +17,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <sstream>
+#include <time.h>
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -29,9 +30,11 @@
 
 #define MAX_TEMPER 100.0
 #define MIN_TEMPER 0.0
+#define HEAT_SRC_NUM 10
 
 __constant__ float dev_max_temper[1];
 __constant__ float dev_min_temper[1];
+__constant__ int dev_heat_src[HEAT_SRC_NUM];
 
 const float pai = 3.1415926f;
 
@@ -135,10 +138,25 @@ void setupVertices(ImportedModel& myModel)
 	glBindVertexArray(0);
 }
 
-__global__ void init_color(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
+__global__ void init_temper(int heat_src_num, float* temper) {
+	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	if (index < heat_src_num) {
+		temper[dev_heat_src[index]] = dev_max_temper[0];
+	}
+}
+
+__global__ void heat_compute(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
+		int start = adj_index[index];
+		int end = adj_index[index + 1];
 
+		float sum = src_temper[index];
+		for (int i = start; i < end; i++) {
+			int neighbour = adj_array[i];
+			sum += src_temper[neighbour];
+		}
+		dst_temper[index] = sum / (end - start + 1);
 	}
 }
 
@@ -170,7 +188,9 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 	cudaGraphicsResourceGetMappedPointer((void**)&device_vert, &size, cuda_vert);
 	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color);
 
-	init_color<<< vertex_num / 256 + 1, 256 >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
+	init_temper <<< HEAT_SRC_NUM / 256 + 1, 256 >>> (HEAT_SRC_NUM, dev_src_temper);
+
+	heat_compute<<< vertex_num / 256 + 1, 256 >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
 
 	set_color<<< vertex_num / 256 + 1, 256 >>> (vertex_num, dev_dst_temper, device_color);
 
@@ -181,6 +201,8 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 }
 
 int main(void) {
+
+	srand((unsigned)time(NULL));
 
 	GLFWwindow* window;
 
@@ -244,9 +266,16 @@ int main(void) {
 	HANDLE_ERROR(cudaMemcpyToSymbol(dev_max_temper, &max_temper, sizeof(float)));
 	HANDLE_ERROR(cudaMemcpyToSymbol(dev_min_temper, &min_temper, sizeof(float)));
 
+	std::vector<int> heat_src(HEAT_SRC_NUM);
+	for (int i = 0; i < HEAT_SRC_NUM; i++) {
+		//heat_src[i] = 100 + i;
+		heat_src[i] = rand() % vertex_num;
+	}
+	HANDLE_ERROR(cudaMemcpyToSymbol(dev_heat_src, &heat_src[0], HEAT_SRC_NUM * sizeof(int)));
+
 	//use 1-demention array to present adj: with adj_idx[i] meaning vertice i's neighbours starts at adj_array[adj_idx[i]] place
 	auto adj_map = my_model.getAdjMat();
-	vector<int> adj_index(vertex_num, 0);
+	vector<int> adj_index(vertex_num + 1, 0);
 	vector<int>	adj_array;
 	for (int i = 0; i < vertex_num; i++) {
 		adj_index[i] = adj_array.size();
@@ -254,10 +283,12 @@ int main(void) {
 			adj_array.push_back(neighbour);
 		}
 	}
+	//for tail case
+	adj_index[vertex_num] = adj_array.size();
 
 	int* dev_adj_index;
-	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_index, vertex_num * sizeof(int)));
-	HANDLE_ERROR(cudaMemcpy(dev_adj_index, &adj_index[0], vertex_num * sizeof(int), cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_index, (vertex_num + 1) * sizeof(int)));
+	HANDLE_ERROR(cudaMemcpy(dev_adj_index, &adj_index[0], (vertex_num + 1) * sizeof(int), cudaMemcpyHostToDevice));
 
 	int* dev_adj_array;
 	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_array, adj_array.size() * sizeof(int)));
@@ -285,6 +316,7 @@ int main(void) {
 		glUniform3fv(glGetUniformLocation(renderingProgram, name.c_str()), 1, &value[0]);
 	};
 
+	bool use_src = true;
 	/* Loop until the user closes the window */
 	while (!glfwWindowShouldClose(window))
 	{
@@ -302,7 +334,12 @@ int main(void) {
 
 		/* Cuda here */
 		//dynamically use gl resource through cuda to change its values
-		heat_compute(dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
+		if (use_src) {
+			heat_compute(dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
+		} else {
+			heat_compute(dev_adj_index, dev_adj_array, dev_dst_temper, dev_src_temper);
+		}
+		use_src = !use_src;
 
 		/* Render here */
 		auto current_time = (float)glfwGetTime();
