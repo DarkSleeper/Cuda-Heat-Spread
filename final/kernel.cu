@@ -144,7 +144,7 @@ __global__ void set_color(int vertex_num, float4* colors) {
 	}
 }
 
-void heat_compute() {
+void heat_compute(int* dev_adj_index, int* dev_adj_array, float4* dev_dst_color) {
 	// 在CUDA中映射资源，锁定资源
 	cudaGraphicsMapResources(1, &cuda_vert, 0);
 	cudaGraphicsMapResources(1, &cuda_color, 0);
@@ -231,17 +231,34 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/craneo_high.OBJ");
+	ImportedModel my_model("runtime/model/craneo_low.OBJ");
 	setupVertices(my_model);
 
 	//get cuda resources ready
-	//auto origin_vertices = my_model.getOriginVertices();
-	//todo : use 1-demention array to present adj: with adj_idx[i] meaning vertice i's neighbours starts at adj_array[adj_idx[i]] place
+	//use 1-demention array to present adj: with adj_idx[i] meaning vertice i's neighbours starts at adj_array[adj_idx[i]] place
 	auto adj_map = my_model.getAdjMat();
+	vector<int> adj_index(vertex_num, 0);
+	vector<int>	adj_array;
+	for (int i = 0; i < vertex_num; i++) {
+		adj_index[i] = adj_array.size();
+		for (auto neighbour: adj_map[i]) {
+			adj_array.push_back(neighbour);
+		}
+	}
 
-	//float3* dev_origin_verts;
-	//HANDLE_ERROR(cudaMalloc((void**)&dev_origin_verts, host_origin_verts.size() * sizeof(float3)));
-	//HANDLE_ERROR(cudaMemcpy(dev_origin_verts, &host_origin_verts[0], host_origin_verts.size() * sizeof(float3), cudaMemcpyHostToDevice));
+	int* dev_adj_index;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_index, vertex_num * sizeof(int)));
+	HANDLE_ERROR(cudaMemcpy(dev_adj_index, &adj_index[0], vertex_num * sizeof(int), cudaMemcpyHostToDevice));
+
+	int* dev_adj_array;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_array, adj_array.size() * sizeof(int)));
+	HANDLE_ERROR(cudaMemcpy(dev_adj_array, &adj_array[0], adj_array.size() * sizeof(int), cudaMemcpyHostToDevice));
+
+	vector<float4> dst_color(vertex_num);
+	float4* dev_dst_color;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_dst_color, vertex_num * sizeof(float4)));
+	HANDLE_ERROR(cudaMemcpy(dev_dst_color, &dst_color[0], vertex_num * sizeof(float4), cudaMemcpyHostToDevice));
+
 
 	//set light
 	glm::vec3 direct_light = glm::vec3(0, 0, -1);
@@ -271,7 +288,7 @@ int main(void) {
 
 		/* Cuda here */
 		//dynamically use gl resource through cuda to change its values
-		heat_compute();
+		heat_compute(dev_adj_index, dev_adj_array, dev_dst_color);
 
 		/* Render here */
 		auto current_time = (float)glfwGetTime();
@@ -321,7 +338,10 @@ int main(void) {
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
-	//HANDLE_ERROR(cudaFree(dev_origin_verts));
+	HANDLE_ERROR(cudaFree(dev_adj_index));
+	HANDLE_ERROR(cudaFree(dev_adj_array));
+	HANDLE_ERROR(cudaFree(dev_dst_color));
+
 	return 0;
 }
 
