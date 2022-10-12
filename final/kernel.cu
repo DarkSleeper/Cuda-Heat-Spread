@@ -32,8 +32,6 @@
 #define MIN_TEMPER 0.0
 #define HEAT_SRC_NUM 10
 
-__constant__ float dev_max_temper[1];
-__constant__ float dev_min_temper[1];
 __constant__ int dev_heat_src[HEAT_SRC_NUM];
 
 const float pai = 3.1415926f;
@@ -139,8 +137,13 @@ void setupVertices(ImportedModel& myModel)
 __global__ void init_temper(int heat_src_num, float* temper) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < heat_src_num) {
-		temper[dev_heat_src[index]] = dev_max_temper[0];
+		temper[dev_heat_src[index]] = MAX_TEMPER;
 	}
+}
+
+__device__ int get_distance(float3 a, float3 b) {
+	float3 c = make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
+	return sqrtf(c.x * c.x + c.y * c.y + c.z * c.z);
 }
 
 __global__ void heat_compute(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
@@ -149,19 +152,29 @@ __global__ void heat_compute(int vertex_num, float3* vertices, int* adj_index, i
 		int start = adj_index[index];
 		int end = adj_index[index + 1];
 
-		float sum = src_temper[index];
-		for (int i = start; i < end; i++) {
-			int neighbour = adj_array[i];
-			sum += src_temper[neighbour];
+		float src_t = src_temper[index];
+		float3 src_pos = vertices[index];
+
+		float rise_t = 0;
+		if (end - start > 0) {
+			for (int i = start; i < end; i++) {
+				int neighbour = adj_array[i];
+				float dt = src_temper[neighbour] - src_t;
+				float dis = get_distance(vertices[neighbour], src_pos) + 1;
+
+				float speed = 1 / dis * abs(dt) / (MAX_TEMPER - MIN_TEMPER);
+				rise_t += speed * dt;
+			}
+			rise_t /= end - start;
 		}
-		dst_temper[index] = sum / (end - start + 1);
+		dst_temper[index] = src_t + rise_t;
 	}
 }
 
 __global__ void set_color(int vertex_num, float* temper, float4* color) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
-		float a = (temper[index] - dev_min_temper[0]) / (dev_max_temper[0] - dev_min_temper[0]);
+		float a = (temper[index] - MIN_TEMPER) / (MAX_TEMPER - MIN_TEMPER);
 		if (a > 0.5) {
 			color[index].x = 1;
 			color[index].y = (1 - a) / a;
@@ -255,15 +268,10 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/craneo_low.OBJ");
+	ImportedModel my_model("runtime/model/craneo_high.OBJ");
 	setupVertices(my_model);
 
 	//get cuda resources ready
-	float max_temper = MAX_TEMPER;
-	float min_temper = MIN_TEMPER;
-	HANDLE_ERROR(cudaMemcpyToSymbol(dev_max_temper, &max_temper, sizeof(float)));
-	HANDLE_ERROR(cudaMemcpyToSymbol(dev_min_temper, &min_temper, sizeof(float)));
-
 	std::vector<int> heat_src(HEAT_SRC_NUM);
 	for (int i = 0; i < HEAT_SRC_NUM; i++) {
 		//heat_src[i] = 100 + i;
