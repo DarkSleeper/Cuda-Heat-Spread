@@ -229,7 +229,7 @@ int main(void) {
 	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 
 	/* Create a windowed mode window and its OpenGL context */
-	window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "heat", NULL, NULL);
+	window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Heat", NULL, NULL);
 	if (!window)
 	{
 		glfwTerminate();
@@ -260,8 +260,8 @@ int main(void) {
 	glm::mat4 projection_mat = glm::perspective(toRadians(45.f), aspect, 0.01f, 1000.f);
 	glm::mat4 model_mat;
 	model_mat = glm::identity<glm::mat4>();
-	model_mat = glm::rotate(model_mat, toRadians(180.f), glm::vec3(0.0f, 1.0f, 0.0f));
-	model_mat = glm::rotate(model_mat, toRadians(90.f), glm::vec3(1.0f, 0.0f, 0.0f));
+	//model_mat = glm::rotate(model_mat, toRadians(180.f), glm::vec3(0.0f, 1.0f, 0.0f));
+	//model_mat = glm::rotate(model_mat, toRadians(90.f), glm::vec3(1.0f, 0.0f, 0.0f));
 
 	//set shader
 	auto vertex_path = "runtime/shader/opacity.vs";
@@ -270,7 +270,7 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/snow.obj");
+	ImportedModel my_model("runtime/model/snow_low.obj");
 	setupVertices(my_model);
 
 	//get cuda resources ready
@@ -328,6 +328,9 @@ int main(void) {
 	// timing
 	float delta_time = 0.0f;
 	float last_time = 0.0f;
+
+	float sum_delta_time = 0.0f;
+	float sum_elapsed_time = 0.0f;
 	int frame_cnt = 0;
 	/* Loop until the user closes the window */
 	while (!glfwWindowShouldClose(window))
@@ -342,6 +345,7 @@ int main(void) {
 			//std::cout<<"delta_time:"<<delta_time<<std::endl;
 			last_time = current_time;
 		}
+		sum_delta_time += delta_time;
 
 		processInput(window);
 		glm::mat4 view_mat = camera.GetViewMatrix();
@@ -359,14 +363,17 @@ int main(void) {
 		use_src = !use_src;
 		HANDLE_ERROR(cudaEventRecord(stop, 0));
 		HANDLE_ERROR(cudaEventSynchronize(stop));
-		float   elapsedTime;
-		HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
+		float   elapsed_time;
+		HANDLE_ERROR(cudaEventElapsedTime(&elapsed_time, start, stop));
 		//printf("Time to compute heat:  %3.1f ms\n", elapsedTime);
+		sum_elapsed_time += elapsed_time;
 
 		//show result
 		if (frame_cnt % 10 == 0) {
-			string title = "heat   delta_time: " + to_string(delta_time) + "  cuda_time: " + to_string(elapsedTime);
+			string title = "Heat   delta_time: " + to_string(sum_delta_time / 10) + "  cuda_time: " + to_string(sum_elapsed_time / 10);
 			glfwSetWindowTitle(window, title.data());
+			sum_delta_time = 0.0f;
+			sum_elapsed_time = 0.0f;
 		}
 
 		/* Render here */
