@@ -247,7 +247,8 @@ int main(void) {
 	glm::mat4 model_mat;
 	model_mat = glm::identity<glm::mat4>();
 	//model_mat = glm::rotate(model_mat, toRadians(180.f), glm::vec3(0.0f, 1.0f, 0.0f));
-	//model_mat = glm::rotate(model_mat, toRadians(90.f), glm::vec3(1.0f, 0.0f, 0.0f));
+	//model_mat = glm::rotate(model_mat, toRadians(-90.f), glm::vec3(1.0f, 0.0f, 0.0f));
+	//model_mat = glm::scale(model_mat, glm::vec3(0.2f, 0.2f, 0.2f));
 
 	//set shader
 	auto vertex_path = "runtime/shader/opacity.vs";
@@ -256,7 +257,7 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/snow_high2.obj");
+	ImportedModel my_model("runtime/model/Denker_low.obj");
 	setupVertices(my_model);
 
 	//get cuda resources ready
@@ -300,7 +301,7 @@ int main(void) {
 
 
 	//set light
-	glm::vec3 direct_light = glm::vec3(1, 1, -1);
+	glm::vec3 direct_light = glm::vec3(1, -1, -1);
 
 	//prepare funcs
 	auto setMat4 = [&](const std::string& name, const glm::mat4& mat) -> void {
