@@ -32,6 +32,8 @@
 #define MIN_TEMPER 0.0
 #define HEAT_SRC_NUM 10
 
+#define TIME_FRAME_CNT 5
+
 __constant__ int dev_heat_src[HEAT_SRC_NUM];
 
 const float pai = 3.1415926f;
@@ -194,7 +196,12 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 	cudaGraphicsUnmapResources(1, &cuda_color, 0);
 }
 
-int main(void) {
+int main(int argc, char* argv[]) {
+	string model_name = "runtime/model/Denker_low.obj";
+	if (argc == 2) {
+		model_name = string("runtime/model/") + argv[1];
+	}
+
 	cudaEvent_t     start, stop;
 	HANDLE_ERROR(cudaEventCreate(&start));
 	HANDLE_ERROR(cudaEventCreate(&stop));
@@ -257,7 +264,7 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/Denker_low.obj");
+	ImportedModel my_model(model_name.data());
 	setupVertices(my_model);
 
 	//get cuda resources ready
@@ -356,8 +363,8 @@ int main(void) {
 		sum_elapsed_time += elapsed_time;
 
 		//show result
-		if (frame_cnt % 10 == 0) {
-			string title = "Heat   delta_time: " + to_string(sum_delta_time / 10) + "  cuda_time: " + to_string(sum_elapsed_time / 10);
+		if (frame_cnt % TIME_FRAME_CNT == 0) {
+			string title = "Heat       vertex_num:" + to_string(vertex_num) + "   delta_time: " + to_string(sum_delta_time / TIME_FRAME_CNT) + "  cuda_time: " + to_string(sum_elapsed_time / TIME_FRAME_CNT);
 			glfwSetWindowTitle(window, title.data());
 			sum_delta_time = 0.0f;
 			sum_elapsed_time = 0.0f;
