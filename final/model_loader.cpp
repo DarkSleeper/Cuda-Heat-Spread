@@ -18,16 +18,9 @@ ImportedModel::ImportedModel(const char* filePath)
 
 	_triangle_indexes = modelImporter.getTriangleVertices();
 
-	vector<float> origin_verts = modelImporter.getOriginVertices();
-	vector<float> tcs = modelImporter.getTextureCoordinates();
-	vector<float> normals = modelImporter.getNormals();
-
-	for (int i = 0; i < _numVertices; i++)
-	{
-		_origin_vertices.push_back(glm::vec3(origin_verts[i * 3 + 0], origin_verts[i * 3 + 1], origin_verts[i * 3 + 2]));
-		_texCoords.push_back(glm::vec2(tcs[i * 2 + 0], tcs[i * 2 + 1]));
-		_normalVecs.push_back(glm::vec3(normals[i * 3 + 0], normals[i * 3 + 1], normals[i * 3 + 2]));
-	}
+	_origin_vertices = modelImporter.getOriginVertices();
+	_texCoords = modelImporter.getTextureCoordinates();
+	_normalVecs = modelImporter.getNormals();
 
 	int num_origin = _numVertices;
 	_adj_mat.resize(num_origin, vector<int>());
@@ -49,12 +42,12 @@ std::vector<int> ImportedModel::getTriangleIndexes()
 	return std::move(_triangle_indexes);
 }
 
-std::vector<glm::vec2> ImportedModel::getTextureCoords()
+std::vector<float> ImportedModel::getTextureCoords()
 {
 	return std::move(_texCoords);
 }
 
-std::vector<glm::vec3> ImportedModel::getNormals()
+std::vector<float> ImportedModel::getNormals()
 {
 	return std::move(_normalVecs);
 }
@@ -64,7 +57,7 @@ std::vector<std::vector<int>> ImportedModel::getAdjMat()
 	return std::move(_adj_mat);
 }
 
-std::vector<glm::vec3> ImportedModel::getOriginVertices() 
+std::vector<float> ImportedModel::getOriginVertices()
 {
 	return std::move(_origin_vertices);
 }

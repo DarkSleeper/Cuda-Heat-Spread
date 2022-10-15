@@ -53,6 +53,7 @@ Camera camera(glm::vec3(0.0f, 0.0f, 10.0f));
 float lastX = (float)SCR_WIDTH / 2.0;
 float lastY = (float)SCR_HEIGHT / 2.0;
 bool firstMouse = true;
+unsigned int display_mode = 0;
 
 float speed = 0.016f;
 
@@ -64,6 +65,7 @@ float toRadians(float degrees)
 	return (degrees * 2.f * pai) / 360.f;
 }
 
+void onKeyPress(GLFWwindow* window, int key, int scancode, int action, int mods);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
@@ -73,28 +75,11 @@ void init_shader(const char* vertexPath, const char* fragmentPath, GLuint& ID);
 
 void setupVertices(ImportedModel& myModel)
 {
-	vector<glm::vec3> vert = myModel.getOriginVertices();
-	vector<glm::vec2> text = myModel.getTextureCoords();
-	vector<glm::vec3> norm = myModel.getNormals();
-
-	vector<float> pValues;
-	vector<float> tValues;
-	vector<float> nValues;
+	auto pValues = myModel.getOriginVertices();
+	auto tValues = myModel.getTextureCoords();
+	auto nValues = myModel.getNormals();
 
 	vertex_num = myModel.getNumVertices();
-	for (int i = 0; i < vertex_num; i++)
-	{
-		pValues.push_back(vert[i].x);
-		pValues.push_back(vert[i].y);
-		pValues.push_back(vert[i].z);
-
-		tValues.push_back(text[i].s);
-		tValues.push_back(text[i].t);
-
-		nValues.push_back(norm[i].x);
-		nValues.push_back(norm[i].y);
-		nValues.push_back(norm[i].z);
-	}
 
 	auto triangle_indexes = myModel.getTriangleIndexes();
 	triangle_vertex_num = triangle_indexes.size();
@@ -239,6 +224,7 @@ int main(void) {
 	/* Make the window's context current */
 	glfwMakeContextCurrent(window);
 
+	glfwSetKeyCallback(window, onKeyPress);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 	glfwSetCursorPosCallback(window, mouse_callback);
 	glfwSetScrollCallback(window, scroll_callback);
@@ -270,7 +256,7 @@ int main(void) {
 	init_shader(vertex_path, fragment_path, renderingProgram);
 	
 	//set model
-	ImportedModel my_model("runtime/model/snow_low.obj");
+	ImportedModel my_model("runtime/model/snow_high2.obj");
 	setupVertices(my_model);
 
 	//get cuda resources ready
@@ -411,6 +397,11 @@ int main(void) {
 		glEnable(GL_DEPTH_TEST);
 		//指定用于深度缓冲比较值；
 		glDepthFunc(GL_LEQUAL);
+
+		if (display_mode == 0) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		else if (display_mode == 1) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		else glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+
 		glDrawElements(GL_TRIANGLES, triangle_vertex_num, GL_UNSIGNED_INT, 0);
 
 		/* Swap front and back buffers */
@@ -528,6 +519,12 @@ void init_shader(const char* vertexPath, const char* fragmentPath, GLuint &ID) {
 }
 
 
+void onKeyPress(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+	if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+		display_mode = (display_mode + 1) % 3;
+	}
+}
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
@@ -573,7 +570,8 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 	lastX = xpos;
 	lastY = ypos;
 
-	camera.ProcessMouseMovement(xoffset, yoffset);
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+		camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called

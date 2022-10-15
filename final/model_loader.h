@@ -20,20 +20,20 @@ private:
 
 	//size a: trangle verts; size b: origin verts
 	std::vector<int> _triangle_indexes;			// a     //所有三角形顶点索引
-	std::vector<glm::vec2> _texCoords;			// b     //纹理坐标（u，v）
-	std::vector<glm::vec3> _normalVecs;			// b     //法线
+	std::vector<float> _texCoords;				// b     //纹理坐标（u，v）
+	std::vector<float> _normalVecs;				// b     //法线
 	std::vector<std::vector<int>> _adj_mat;		// b
-	std::vector<glm::vec3> _origin_vertices;	// b
+	std::vector<float> _origin_vertices;		// b
 public:
 	ImportedModel();
 	ImportedModel(const char* filePath);
 	int getNumVertices();
 	std::vector<int> getTriangleIndexes();
-	std::vector<glm::vec2> getTextureCoords();
-	std::vector<glm::vec3> getNormals();
+	std::vector<float> getTextureCoords();
+	std::vector<float> getNormals();
 
 	std::vector<std::vector<int>> getAdjMat();
-	std::vector<glm::vec3> getOriginVertices();
+	std::vector<float> getOriginVertices();
 };
 
 
