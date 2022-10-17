@@ -33,6 +33,7 @@
 #define HEAT_SRC_NUM 10
 
 #define TIME_FRAME_CNT 5
+#define OUTPUT_FRAME_CNT 1000
 
 __constant__ int dev_heat_src[HEAT_SRC_NUM];
 
@@ -55,6 +56,7 @@ Camera camera(glm::vec3(0.0f, 0.0f, 10.0f));
 float lastX = (float)SCR_WIDTH / 2.0;
 float lastY = (float)SCR_HEIGHT / 2.0;
 bool firstMouse = true;
+bool use_sync = true;
 unsigned int display_mode = 0;
 
 float speed = 0.016f;
@@ -116,6 +118,23 @@ void setupVertices(ImportedModel& myModel)
 	glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(float4), &(colors[0]), GL_STATIC_DRAW);
 	cudaGraphicsGLRegisterBuffer(&cuda_color, vbo[3], cudaGraphicsRegisterFlagsNone);
 
+	// set attribute idx
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(0);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(1);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[2]);
+	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(2);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[3]);
+	glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(3);
+
 	// 解绑VAO和VBO， 顺序很重要
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
@@ -133,7 +152,7 @@ __device__ int get_distance(float3 a, float3 b) {
 	return sqrtf(c.x * c.x + c.y * c.y + c.z * c.z);
 }
 
-__global__ void heat_compute(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
+__global__ void heat_spread(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
 		int start = adj_index[index];
@@ -172,7 +191,7 @@ __global__ void set_color(int vertex_num, float* temper, float4* color) {
 	}
 }
 
-void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper, float* dev_dst_temper) {
+void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper, float* dev_dst_temper, cudaStream_t* stream) {
 	// 在CUDA中映射资源，锁定资源
 	cudaGraphicsMapResources(1, &cuda_vert, 0);
 	cudaGraphicsMapResources(1, &cuda_color, 0);
@@ -184,11 +203,13 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 	cudaGraphicsResourceGetMappedPointer((void**)&device_vert, &size, cuda_vert);
 	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color);
 
-	init_temper <<< HEAT_SRC_NUM / 256 + 1, 256 >>> (HEAT_SRC_NUM, dev_src_temper);
+	init_temper <<< HEAT_SRC_NUM / 256 + 1, 256, 0, stream[0] >>> (HEAT_SRC_NUM, dev_src_temper);
 
-	heat_compute<<< vertex_num / 256 + 1, 256 >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
+	//for (int i = 0; i < 10; i++) {
+	heat_spread <<< vertex_num / 256 + 1, 256, 0, stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
+	//}
 
-	set_color<<< vertex_num / 256 + 1, 256 >>> (vertex_num, dev_dst_temper, device_color);
+	set_color <<< vertex_num / 256 + 1, 256, 0, stream[1] >>> (vertex_num, dev_src_temper, device_color);
 
 	// 处理完了即可解除资源锁定，OpenGL可以开始利用处理结果了。
 	// 注意在CUDA处理过程中，OpenGL如果访问这些锁定的资源会出错。
@@ -268,6 +289,12 @@ int main(int argc, char* argv[]) {
 	setupVertices(my_model);
 
 	//get cuda resources ready
+	//streams
+	cudaStream_t stream[2];
+	cudaStreamCreateWithFlags(&stream[0], cudaStreamNonBlocking);
+	cudaStreamCreateWithFlags(&stream[1], cudaStreamNonBlocking);
+
+	//const mem
 	std::vector<int> heat_src(HEAT_SRC_NUM);
 	for (int i = 0; i < HEAT_SRC_NUM; i++) {
 		//heat_src[i] = 100 + i;
@@ -326,6 +353,7 @@ int main(int argc, char* argv[]) {
 	float sum_delta_time = 0.0f;
 	float sum_elapsed_time = 0.0f;
 	int frame_cnt = 0;
+	float elapsed_time_output = 0.0f;
 	/* Loop until the user closes the window */
 	while (!glfwWindowShouldClose(window))
 	{
@@ -350,9 +378,9 @@ int main(int argc, char* argv[]) {
 
 		HANDLE_ERROR(cudaEventRecord(start, 0));
 		if (use_src) {
-			heat_compute(dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
+			heat_compute(dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper, stream);
 		} else {
-			heat_compute(dev_adj_index, dev_adj_array, dev_dst_temper, dev_src_temper);
+			heat_compute(dev_adj_index, dev_adj_array, dev_dst_temper, dev_src_temper, stream);
 		}
 		use_src = !use_src;
 		HANDLE_ERROR(cudaEventRecord(stop, 0));
@@ -361,13 +389,20 @@ int main(int argc, char* argv[]) {
 		HANDLE_ERROR(cudaEventElapsedTime(&elapsed_time, start, stop));
 		//printf("Time to compute heat:  %3.1f ms\n", elapsedTime);
 		sum_elapsed_time += elapsed_time;
+		elapsed_time_output += elapsed_time;
 
 		//show result
-		if (frame_cnt % TIME_FRAME_CNT == 0) {
-			string title = "Heat       vertex_num:" + to_string(vertex_num) + "   delta_time: " + to_string(sum_delta_time / TIME_FRAME_CNT) + "  cuda_time: " + to_string(sum_elapsed_time / TIME_FRAME_CNT);
-			glfwSetWindowTitle(window, title.data());
-			sum_delta_time = 0.0f;
-			sum_elapsed_time = 0.0f;
+		if (frame_cnt > 0) {
+			if (frame_cnt % TIME_FRAME_CNT == 0) {
+				string title = "Heat       vertex_num:" + to_string(vertex_num) + "   delta_time: " + to_string(sum_delta_time * 1000 / TIME_FRAME_CNT) + "  cuda_time: " + to_string(sum_elapsed_time / TIME_FRAME_CNT);
+				glfwSetWindowTitle(window, title.data());
+				sum_delta_time = 0.0f;
+				sum_elapsed_time = 0.0f;
+			}
+			if (frame_cnt % OUTPUT_FRAME_CNT == 0) {
+				std::cout << "CUDA time for #frame" << frame_cnt << " is : " << elapsed_time_output / OUTPUT_FRAME_CNT << std::endl;
+				elapsed_time_output = 0.0f;
+			}
 		}
 
 		/* Render here */
@@ -386,22 +421,6 @@ int main(int argc, char* argv[]) {
 		setMat4("model", model_mat);
 		setVec3("direct_light", direct_light);
 
-		glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-		glEnableVertexAttribArray(0);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
-		glEnableVertexAttribArray(1);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo[2]);
-		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
-		glEnableVertexAttribArray(2);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo[3]);
-		glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 0, 0);
-		glEnableVertexAttribArray(3);
-
 		glEnable(GL_DEPTH_TEST);
 		//指定用于深度缓冲比较值；
 		glDepthFunc(GL_LEQUAL);
@@ -414,6 +433,8 @@ int main(int argc, char* argv[]) {
 
 		/* Swap front and back buffers */
 		glfwSwapBuffers(window);
+		if (use_sync) glfwSwapInterval(1);
+		else glfwSwapInterval(0);
 
 		/* Poll for and process events */
 		glfwPollEvents();
@@ -431,6 +452,9 @@ int main(int argc, char* argv[]) {
 
 	HANDLE_ERROR(cudaEventDestroy(start));
 	HANDLE_ERROR(cudaEventDestroy(stop));
+
+	HANDLE_ERROR(cudaStreamDestroy(stream[0]));
+	HANDLE_ERROR(cudaStreamDestroy(stream[1]));
 
 	return 0;
 }
@@ -531,6 +555,9 @@ void onKeyPress(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
 	if (key == GLFW_KEY_P && action == GLFW_PRESS) {
 		display_mode = (display_mode + 1) % 3;
+	}
+	if (key == GLFW_KEY_V && action == GLFW_PRESS) {
+		use_sync = !use_sync;
 	}
 }
 
