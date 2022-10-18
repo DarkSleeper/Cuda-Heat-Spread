@@ -227,6 +227,15 @@ int main(int argc, char* argv[]) {
 	if (argc == 2) {
 		model_name = string("runtime/model/") + argv[1];
 	}
+	stringstream help_info;
+	help_info << "Press W/A/S/D      to navigate" << endl;
+	help_info << "Press LEFT_BUTTON  to change camera's front" << endl;
+	help_info << "Press P            to switch Polygon Mode" << endl;
+	help_info << "Press V            to disable/enable vertical sync" << endl;
+	help_info << "Press UP/DOWN      to change heat compute times per frame" << endl;
+	help_info << "Some info shows in the window's title" << endl;
+	help_info << "--------------------------------------------------------" << endl;
+	std::cout << help_info.str();
 
 	cudaEvent_t     start, stop;
 	HANDLE_ERROR(cudaEventCreate(&start));
