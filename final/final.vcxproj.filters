@@ -34,6 +34,7 @@
       <Filter>model_loader</Filter>
     </ClInclude>
     <ClInclude Include="camera.h" />
+    <ClInclude Include="my_queue.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="model_loader.cpp">

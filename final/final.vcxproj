@@ -93,6 +93,7 @@
     <ClInclude Include="common\gl_helper.h" />
     <ClInclude Include="common\gpu_anim.h" />
     <ClInclude Include="model_loader.h" />
+    <ClInclude Include="my_queue.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\glad\src\glad.c" />
