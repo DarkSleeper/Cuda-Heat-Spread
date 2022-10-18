@@ -19,7 +19,7 @@ ImportedModel::ImportedModel(const char* filePath)
 	_triangle_indexes = modelImporter.getTriangleVertices();
 
 	_origin_vertices = modelImporter.getOriginVertices();
-	_texCoords = modelImporter.getTextureCoordinates();
+	//_texCoords = modelImporter.getTextureCoordinates();
 	_normalVecs = modelImporter.getNormals();
 
 	int num_origin = _numVertices;
@@ -42,10 +42,10 @@ std::vector<int> ImportedModel::getTriangleIndexes()
 	return std::move(_triangle_indexes);
 }
 
-std::vector<float> ImportedModel::getTextureCoords()
-{
-	return std::move(_texCoords);
-}
+//std::vector<float> ImportedModel::getTextureCoords()
+//{
+//	return std::move(_texCoords);
+//}
 
 std::vector<float> ImportedModel::getNormals()
 {
@@ -95,8 +95,8 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 		{
 			std::stringstream ss(line.erase(0, 2));
 			ss >> x >> y;
-			_stVals.push_back(x);
-			_stVals.push_back(y);
+			//_stVals.push_back(x);
+			//_stVals.push_back(y);
 		}
 		if (line.compare(0, 2, "vn") == 0)
 		{
@@ -109,7 +109,7 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 		if (line.compare(0, 1, "f") == 0)  //‘≠ È”–ŒÛ
 		{
 			if (init_face) {
-				_textureCoords.resize(_vertVals.size() / 3 * 2);
+				//_textureCoords.resize(_vertVals.size() / 3 * 2);
 				_normals.resize(_vertVals.size() / 3 * 3);
 				init_face = false;
 			}
@@ -133,8 +133,8 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 
 				_triangleVerts.push_back(idx[i]);
 
-				_textureCoords[idx[i] * 2 + 0] = _stVals[tcRef];
-				_textureCoords[idx[i] * 2 + 1] = _stVals[tcRef + 1];
+				//_textureCoords[idx[i] * 2 + 0] = _stVals[tcRef];
+				//_textureCoords[idx[i] * 2 + 1] = _stVals[tcRef + 1];
 
 				_normals[idx[i] * 3 + 0] = _normVals[normRef];
 				_normals[idx[i] * 3 + 1] = _normVals[normRef + 1];
@@ -163,10 +163,10 @@ std::vector<int> ModelImporter::getTriangleVertices()
 	return std::move(_triangleVerts);
 }
 
-std::vector<float> ModelImporter::getTextureCoordinates()
-{
-	return std::move(_textureCoords);
-}
+//std::vector<float> ModelImporter::getTextureCoordinates()
+//{
+//	return std::move(_textureCoords);
+//}
 
 std::vector<float> ModelImporter::getNormals()
 {

@@ -81,7 +81,7 @@ void init_shader(const char* vertexPath, const char* fragmentPath, GLuint& ID);
 void setupVertices(ImportedModel& myModel)
 {
 	auto pValues = myModel.getOriginVertices();
-	auto tValues = myModel.getTextureCoords();
+	//auto tValues = myModel.getTextureCoords();
 	auto nValues = myModel.getNormals();
 
 	vertex_num = myModel.getNumVertices();
@@ -104,8 +104,8 @@ void setupVertices(ImportedModel& myModel)
 	cudaGraphicsGLRegisterBuffer(&cuda_vert, vbo[0], cudaGraphicsRegisterFlagsNone);
 
 	//uv
-	glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
-	glBufferData(GL_ARRAY_BUFFER, tValues.size() * sizeof(float), &(tValues[0]), GL_STATIC_DRAW);
+	//glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+	//glBufferData(GL_ARRAY_BUFFER, tValues.size() * sizeof(float), &(tValues[0]), GL_STATIC_DRAW);
 
 	//normal
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[2]);
@@ -124,9 +124,9 @@ void setupVertices(ImportedModel& myModel)
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	glEnableVertexAttribArray(0);
 
-	glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
-	glEnableVertexAttribArray(1);
+	//glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+	//glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	//glEnableVertexAttribArray(1);
 
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[2]);
 	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
@@ -223,7 +223,7 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 }
 
 int main(int argc, char* argv[]) {
-	string model_name = "runtime/model/Denker_low.obj";
+	string model_name = "runtime/model/bunny.obj";
 	if (argc == 2) {
 		model_name = string("runtime/model/") + argv[1];
 	}
