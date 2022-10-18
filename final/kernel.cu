@@ -58,6 +58,7 @@ float lastY = (float)SCR_HEIGHT / 2.0;
 bool firstMouse = true;
 bool use_sync = true;
 unsigned int display_mode = 0;
+int iter_num = 1;
 
 float speed = 0.016f;
 
@@ -203,13 +204,17 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 	cudaGraphicsResourceGetMappedPointer((void**)&device_vert, &size, cuda_vert);
 	cudaGraphicsResourceGetMappedPointer((void**)&device_color, &size, cuda_color);
 
-	init_temper <<< HEAT_SRC_NUM / 256 + 1, 256, 0, stream[0] >>> (HEAT_SRC_NUM, dev_src_temper);
+	float* src = dev_src_temper;
+	float* dst = dev_dst_temper;
+	for (int i = 0; i < iter_num; i++) {
+		init_temper <<< HEAT_SRC_NUM / 256 + 1, 256, 0, stream[0] >>> (HEAT_SRC_NUM, src);
+		heat_spread <<< vertex_num / 256 + 1, 256, 0, stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, src, dst);
+		float* c = src;
+		src = dst;
+		dst = c;
+	}
 
-	//for (int i = 0; i < 10; i++) {
-	heat_spread <<< vertex_num / 256 + 1, 256, 0, stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper);
-	//}
-
-	set_color <<< vertex_num / 256 + 1, 256, 0, stream[1] >>> (vertex_num, dev_src_temper, device_color);
+	set_color <<< vertex_num / 256 + 1, 256, 0, stream[0] >>> (vertex_num, src, device_color);
 
 	// 处理完了即可解除资源锁定，OpenGL可以开始利用处理结果了。
 	// 注意在CUDA处理过程中，OpenGL如果访问这些锁定的资源会出错。
@@ -394,7 +399,7 @@ int main(int argc, char* argv[]) {
 		//show result
 		if (frame_cnt > 0) {
 			if (frame_cnt % TIME_FRAME_CNT == 0) {
-				string title = "Heat       vertex_num:" + to_string(vertex_num) + "   delta_time: " + to_string(sum_delta_time * 1000 / TIME_FRAME_CNT) + "  cuda_time: " + to_string(sum_elapsed_time / TIME_FRAME_CNT);
+				string title = "Heat       vertex_num:" + to_string(vertex_num) + "     iter_num:" + to_string(iter_num) + "   delta_time: " + to_string(sum_delta_time * 1000 / TIME_FRAME_CNT) + "  cuda_time: " + to_string(sum_elapsed_time / TIME_FRAME_CNT);
 				glfwSetWindowTitle(window, title.data());
 				sum_delta_time = 0.0f;
 				sum_elapsed_time = 0.0f;
@@ -558,6 +563,12 @@ void onKeyPress(GLFWwindow* window, int key, int scancode, int action, int mods)
 	}
 	if (key == GLFW_KEY_V && action == GLFW_PRESS) {
 		use_sync = !use_sync;
+	}
+	if (key == GLFW_KEY_UP && action != GLFW_RELEASE) {
+		if (iter_num < 100) iter_num++;
+	}
+	if (key == GLFW_KEY_DOWN && action != GLFW_RELEASE) {
+		if (iter_num > 1) iter_num--;
 	}
 }
 
