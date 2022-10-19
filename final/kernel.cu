@@ -156,23 +156,37 @@ __device__ int get_distance(float3 a, float3 b) {
 __global__ void heat_spread(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
+		float* src = src_temper;
+		float* dst = dst_temper;
+
 		int start = adj_index[index];
 		int end = adj_index[index + 1];
-
-		float src_t = src_temper[index];
 		float3 src_pos = vertices[index];
 
-		float rise_t = 0;
-		for (int i = start; i < end; i++) {
-			int neighbour = adj_array[i];
-			float dt = src_temper[neighbour] - src_t;
-			float dis = get_distance(vertices[neighbour], src_pos) + 1;
+		for (int it = 0; it < 100; it++) {
+			__syncthreads();
+			float src_t = src[index];
 
-			float speed = 1 / dis * abs(dt) / (MAX_TEMPER - MIN_TEMPER);
-			rise_t += speed * dt;
+			float rise_t = 0;
+			for (int i = start; i < end; i++) {
+				int neighbour = adj_array[i];
+				float dt = src[neighbour] - src_t;
+				float dis = get_distance(vertices[neighbour], src_pos) + 1;
+
+				float speed = 1 / dis * abs(dt) / (MAX_TEMPER - MIN_TEMPER);
+				rise_t += speed * dt;
+			}
+			if (rise_t < 0) {
+				rise_t = 0;
+			}
+			rise_t /= end - start + 1; //dt0 = 0 for itself
+			dst[index] = src_t + rise_t;
+			__syncthreads();
+
+			float* c = src;
+			src = dst;
+			dst = c;
 		}
-		rise_t /= end - start + 1; //dt0 = 0 for itself
-		dst_temper[index] = src_t + rise_t;
 	}
 }
 
@@ -206,9 +220,9 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 
 	float* src = dev_src_temper;
 	float* dst = dev_dst_temper;
+	init_temper <<< HEAT_SRC_NUM / 256 + 1, 256, 0, stream[0] >>> (HEAT_SRC_NUM, src);
 	for (int i = 0; i < iter_num; i++) {
-		init_temper <<< HEAT_SRC_NUM / 256 + 1, 256, 0, stream[0] >>> (HEAT_SRC_NUM, src);
-		heat_spread <<< vertex_num / 256 + 1, 256, 0, stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, src, dst);
+		heat_spread <<< (vertex_num + 255) / 256, 256, 0, stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, src, dst);
 		float* c = src;
 		src = dst;
 		dst = c;
