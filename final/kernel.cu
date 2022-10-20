@@ -155,10 +155,17 @@ __device__ int get_distance(float3 a, float3 b) {
 }
 
 __global__ void heat_spread(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
-	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	extern __shared__ int adj[];
+	int tid = threadIdx.x;
+	int index = tid + blockIdx.x * blockDim.x;
+
+	if (tid == 0) adj[tid] = adj_index[index];
+	adj[tid + 1] = adj_index[index + 1];
+	__syncthreads();
+
 	if (index < vertex_num) {
-		int start = adj_index[index];
-		int end = adj_index[index + 1];
+		int start = adj[tid];
+		int end = adj[tid + 1];
 
 		float src_t = src_temper[index];
 		float3 src_pos = vertices[index];
@@ -213,7 +220,7 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 	init_temper <<< HEAT_SRC_NUM / THREAD_NUM + 1, THREAD_NUM, 0, stream[0] >>> (HEAT_SRC_NUM, src);
 	//pre-calculate distance array! size = adj_array.size()
 	for (int i = 0; i < iter_num; i++) {
-		heat_spread <<< (vertex_num + THREAD_NUM - 1) / THREAD_NUM, THREAD_NUM, 0, stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, src, dst);
+		heat_spread <<< (vertex_num + THREAD_NUM - 1) / THREAD_NUM, THREAD_NUM, (THREAD_NUM + 1) * sizeof(int), stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, src, dst);
 		float* c = src;
 		src = dst;
 		dst = c;
