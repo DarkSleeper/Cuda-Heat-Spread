@@ -21,9 +21,6 @@
     <ClInclude Include="common\cpu_anim.h">
       <Filter>common</Filter>
     </ClInclude>
-    <ClInclude Include="common\cpu_bitmap.h">
-      <Filter>common</Filter>
-    </ClInclude>
     <ClInclude Include="common\gl_helper.h">
       <Filter>common</Filter>
     </ClInclude>

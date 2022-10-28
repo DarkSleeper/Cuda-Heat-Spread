@@ -89,7 +89,6 @@
     <ClInclude Include="camera.h" />
     <ClInclude Include="common\book.h" />
     <ClInclude Include="common\cpu_anim.h" />
-    <ClInclude Include="common\cpu_bitmap.h" />
     <ClInclude Include="common\gl_helper.h" />
     <ClInclude Include="common\gpu_anim.h" />
     <ClInclude Include="model_loader.h" />

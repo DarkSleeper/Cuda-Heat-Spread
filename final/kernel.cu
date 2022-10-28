@@ -17,6 +17,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <time.h>
 
 #include "cuda_runtime.h"
@@ -35,6 +36,8 @@
 
 #define TIME_FRAME_CNT 5
 #define OUTPUT_FRAME_CNT 1000
+
+#define IMG_SIZE 2048
 
 __constant__ int dev_heat_src[HEAT_SRC_NUM];
 
@@ -73,6 +76,15 @@ float toRadians(float degrees)
 {
 	return (degrees * 2.f * pai) / 360.f;
 }
+
+//一个像素的颜色信息
+struct RGBColor
+{
+    char B;		//蓝
+    char G;		//绿
+    char R;		//红
+};
+void WriteBMP(const char* FileName, RGBColor* ColorBuffer, int ImageWidth, int ImageHeight);
 
 void onKeyPress(GLFWwindow* window, int key, int scancode, int action, int mods);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -249,10 +261,12 @@ void heat_compute(int* dev_adj_ell_array, float* dev_dis_array, float* dev_src_t
 }
 
 int main(int argc, char* argv[]) {
-	string model_name = "runtime/model/bunny.obj";
+	string model_name = "runtime/model/bunny";
 	if (argc == 2) {
 		model_name = string("runtime/model/") + argv[1];
 	}
+	auto bmp_name = model_name + "_matrix.bmp";
+	model_name = model_name + ".obj";
 	stringstream help_info;
 	help_info << "Press W/A/S/D      to navigate" << endl;
 	help_info << "Press LEFT_BUTTON  to change camera's front" << endl;
@@ -364,6 +378,23 @@ int main(int argc, char* argv[]) {
 			dis_array[j * vertex_num_aligned + i] = host_get_distance(src_pos, dst_pos);
 		}
 	}
+	vector<RGBColor> sparse_martix(IMG_SIZE * IMG_SIZE, {0, 0, 0});
+	{
+		int scale = (vertex_num + IMG_SIZE - 1) / IMG_SIZE;
+		for (int i = 0; i < vertex_num; i++) {
+			int adj_num = adj_map[i].size();
+			for (int j = 0; j < adj_num; j++) {
+				auto neighbour = adj_map[i][j];
+				int x = i / scale;
+				int y = neighbour / scale;
+				int offset = x + (IMG_SIZE - 1 - y) * IMG_SIZE;
+				sparse_martix[offset] = {(char)255, (char)255, (char)255};
+				offset = y + (IMG_SIZE - 1 - x) * IMG_SIZE;
+				sparse_martix[offset] = {(char)255, (char)255, (char)255};
+			}
+		}
+	}
+	WriteBMP(bmp_name.data(), &sparse_martix[0], IMG_SIZE, IMG_SIZE);
 	
 	int* dev_adj_ell_array;
 	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_ell_array, adj_ell_array.size() * sizeof(int)));
@@ -669,4 +700,42 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
 	camera.ProcessMouseScroll(yoffset);
+}
+
+void WriteBMP(const char* FileName, RGBColor* ColorBuffer, int ImageWidth, int ImageHeight)
+{
+    //颜色数据总尺寸：
+    const int ColorBufferSize = ImageHeight * ImageWidth * sizeof(RGBColor);
+
+    //文件头
+    BITMAPFILEHEADER fileHeader;
+    fileHeader.bfType = 0x4D42;	//0x42是'B'；0x4D是'M'
+    fileHeader.bfReserved1 = 0;
+    fileHeader.bfReserved2 = 0;
+    fileHeader.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + ColorBufferSize;
+    fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+
+    //信息头
+    BITMAPINFOHEADER bitmapHeader = { 0 };
+    bitmapHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmapHeader.biHeight = ImageHeight;
+    bitmapHeader.biWidth = ImageWidth;
+    bitmapHeader.biPlanes = 1;
+    bitmapHeader.biBitCount = 24;
+    bitmapHeader.biSizeImage = ColorBufferSize;
+    bitmapHeader.biCompression = 0; //BI_RGB
+
+
+    FILE* fp;//文件指针
+
+    //打开文件（没有则创建）
+    fopen_s(&fp, FileName, "wb");
+
+    //写入文件头和信息头
+    fwrite(&fileHeader, sizeof(BITMAPFILEHEADER), 1, fp);
+    fwrite(&bitmapHeader, sizeof(BITMAPINFOHEADER), 1, fp);
+    //写入颜色数据
+    fwrite(ColorBuffer, ColorBufferSize, 1, fp);
+
+    fclose(fp);
 }
