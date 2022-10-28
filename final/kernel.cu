@@ -444,7 +444,7 @@ int main(int argc, char* argv[]) {
 		//show result
 		if (frame_cnt > 0) {
 			if (frame_cnt % TIME_FRAME_CNT == 0) {
-				string title = "Heat       vertex_num:" + to_string(vertex_num) + "     iter_num:" + to_string(iter_num) + "   delta_time: " + to_string(sum_delta_time * 1000 / TIME_FRAME_CNT) + "  cuda_time: " + to_string(sum_elapsed_time / TIME_FRAME_CNT);
+				string title = "Heat       vertex_num:" + to_string(vertex_num) + "     max_adj_num:" + to_string(max_adj_num) + "     iter_num:" + to_string(iter_num) + "   delta_time: " + to_string(sum_delta_time * 1000 / TIME_FRAME_CNT) + "  cuda_time: " + to_string(sum_elapsed_time / TIME_FRAME_CNT);
 				glfwSetWindowTitle(window, title.data());
 				sum_delta_time = 0.0f;
 				sum_elapsed_time = 0.0f;
