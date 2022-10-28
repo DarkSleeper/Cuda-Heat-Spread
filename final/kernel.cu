@@ -162,6 +162,19 @@ float host_get_distance(float3 a, float3 b) {
 	return sqrtf(c.x * c.x + c.y * c.y + c.z * c.z);
 }
 
+__global__ void dis_compute(int vertex_num, float3* vertices, int vertex_num_aligned, int max_adj_num, int* adj_ell_array, float* dis_array) {
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+ 	if (index < vertex_num) {
+ 		float3 src_pos = vertices[index];
+
+		for (int i = 0; i < max_adj_num; i++) {
+			int neighbour = adj_ell_array[vertex_num_aligned * i + index];
+			if (neighbour < 0) break;
+			dis_array[vertex_num_aligned * i + index] = get_distance(vertices[neighbour], src_pos);
+		}
+	}
+}
+
 __global__ void heat_spread(int vertex_num, int vertex_num_aligned, int max_adj_num, int* adj_ell_array, float* dis_array, float* src_temper, float* dst_temper) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
@@ -219,6 +232,7 @@ void heat_compute(int* dev_adj_ell_array, float* dev_dis_array, float* dev_src_t
 	float* dst = dev_dst_temper;
 	init_temper <<< HEAT_SRC_NUM / THREAD_NUM + 1, THREAD_NUM, 0, stream[0] >>> (HEAT_SRC_NUM, src);
 	//pre-calculate distance array! size = adj_array.size()
+	dis_compute <<< (vertex_num + THREAD_NUM - 1) / THREAD_NUM, THREAD_NUM, 0, stream[0] >>>(vertex_num, device_vert, vertex_num_aligned, max_adj_num, dev_adj_ell_array, dev_dis_array);
 	for (int i = 0; i < iter_num; i++) {
 		heat_spread <<< (vertex_num + THREAD_NUM - 1) / THREAD_NUM, THREAD_NUM, 0, stream[0] >>>(vertex_num, vertex_num_aligned, max_adj_num, dev_adj_ell_array, dev_dis_array, src, dst);
 		float* c = src;
