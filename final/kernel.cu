@@ -149,7 +149,7 @@ __global__ void init_temper(int heat_src_num, float* temper) {
 	}
 }
 
-__device__ int get_distance(float3 a, float3 b) {
+__device__ float get_distance(float3 a, float3 b) {
 	float3 c = make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
 	return sqrtf(c.x * c.x + c.y * c.y + c.z * c.z);
 }
