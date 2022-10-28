@@ -65,6 +65,8 @@ float speed = 0.016f;
 
 int vertex_num;
 int triangle_vertex_num;
+int max_adj_num;
+int vertex_num_aligned;
 
 float toRadians(float degrees)
 {
@@ -154,18 +156,18 @@ __device__ int get_distance(float3 a, float3 b) {
 	return sqrtf(c.x * c.x + c.y * c.y + c.z * c.z);
 }
 
-__global__ void heat_spread(int vertex_num, float3* vertices, int* adj_index, int* adj_array, float* src_temper, float* dst_temper) {
+__global__ void heat_spread(int vertex_num, int vertex_num_aligned, int max_adj_num, float3* vertices, int* adj_ell_array, float* src_temper, float* dst_temper) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < vertex_num) {
-		int start = adj_index[index];
-		int end = adj_index[index + 1];
-
 		float src_t = src_temper[index];
 		float3 src_pos = vertices[index];
 
 		float rise_t = 0;
-		for (int i = start; i < end; i++) {
-			int neighbour = adj_array[i];
+		int i;
+		for (i = 0; i < max_adj_num; i++) {
+			int neighbour = adj_ell_array[vertex_num_aligned * i + index];
+			if (neighbour < 0) break;
+
 			float dt = src_temper[neighbour] - src_t;
 			float dis = get_distance(vertices[neighbour], src_pos) + 1;
 
@@ -175,7 +177,7 @@ __global__ void heat_spread(int vertex_num, float3* vertices, int* adj_index, in
 		if (rise_t < 0) {
 			rise_t = 0;
 		}
-		rise_t /= end - start + 1; //dt0 = 0 for itself
+		rise_t /= i + 1; //dt0 = 0 for itself
 		dst_temper[index] = src_t + rise_t;
 	}
 }
@@ -196,7 +198,7 @@ __global__ void set_color(int vertex_num, float* temper, float4* color) {
 	}
 }
 
-void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper, float* dev_dst_temper, cudaStream_t* stream) {
+void heat_compute(int* dev_adj_ell_array, float* dev_src_temper, float* dev_dst_temper, cudaStream_t* stream) {
 	// 在CUDA中映射资源，锁定资源
 	cudaGraphicsMapResources(1, &cuda_vert, 0);
 	cudaGraphicsMapResources(1, &cuda_color, 0);
@@ -213,7 +215,7 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_src_temper,
 	init_temper <<< HEAT_SRC_NUM / THREAD_NUM + 1, THREAD_NUM, 0, stream[0] >>> (HEAT_SRC_NUM, src);
 	//pre-calculate distance array! size = adj_array.size()
 	for (int i = 0; i < iter_num; i++) {
-		heat_spread <<< (vertex_num + THREAD_NUM - 1) / THREAD_NUM, THREAD_NUM, 0, stream[0] >>>(vertex_num, device_vert, dev_adj_index, dev_adj_array, src, dst);
+		heat_spread <<< (vertex_num + THREAD_NUM - 1) / THREAD_NUM, THREAD_NUM, 0, stream[0] >>>(vertex_num, vertex_num_aligned, max_adj_num, device_vert, dev_adj_ell_array, src, dst);
 		float* c = src;
 		src = dst;
 		dst = c;
@@ -323,24 +325,26 @@ int main(int argc, char* argv[]) {
 
 	//use 1-demention array to present adj: with adj_idx[i] meaning vertice i's neighbours starts at adj_array[adj_idx[i]] place
 	auto adj_map = my_model.getAdjMat();
-	vector<int> adj_index(vertex_num + 1, 0);
-	vector<int>	adj_array;
+	max_adj_num = 1;
 	for (int i = 0; i < vertex_num; i++) {
-		adj_index[i] = adj_array.size();
-		for (auto neighbour: adj_map[i]) {
-			adj_array.push_back(neighbour);
+		int cur_adj_num = adj_map[i].size();
+		if (cur_adj_num > max_adj_num) {
+			max_adj_num = cur_adj_num;
 		}
 	}
-	//for tail case
-	adj_index[vertex_num] = adj_array.size();
-
-	int* dev_adj_index;
-	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_index, (vertex_num + 1) * sizeof(int)));
-	HANDLE_ERROR(cudaMemcpy(dev_adj_index, &adj_index[0], (vertex_num + 1) * sizeof(int), cudaMemcpyHostToDevice));
-
-	int* dev_adj_array;
-	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_array, adj_array.size() * sizeof(int)));
-	HANDLE_ERROR(cudaMemcpy(dev_adj_array, &adj_array[0], adj_array.size() * sizeof(int), cudaMemcpyHostToDevice));
+	vertex_num_aligned = ((vertex_num + THREAD_NUM - 1) / THREAD_NUM) * THREAD_NUM;
+	vector<int> adj_ell_array(vertex_num_aligned * max_adj_num, -1);
+	for (int i = 0; i < vertex_num; i++) {
+		int adj_num = adj_map[i].size();
+		for (int j = 0; j < adj_num; j++) {
+			auto neighbour = adj_map[i][j];
+			adj_ell_array[j * vertex_num_aligned + i] = neighbour;
+		}
+	}
+	
+	int* dev_adj_ell_array;
+	HANDLE_ERROR(cudaMalloc((void**)&dev_adj_ell_array, adj_ell_array.size() * sizeof(int)));
+	HANDLE_ERROR(cudaMemcpy(dev_adj_ell_array, &adj_ell_array[0], adj_ell_array.size() * sizeof(int), cudaMemcpyHostToDevice));
 
 	vector<float> src_temper(vertex_num, MIN_TEMPER);
 	float* dev_src_temper;
@@ -397,9 +401,9 @@ int main(int argc, char* argv[]) {
 
 		HANDLE_ERROR(cudaEventRecord(start, 0));
 		if (use_src) {
-			heat_compute(dev_adj_index, dev_adj_array, dev_src_temper, dev_dst_temper, stream);
+			heat_compute(dev_adj_ell_array, dev_src_temper, dev_dst_temper, stream);
 		} else {
-			heat_compute(dev_adj_index, dev_adj_array, dev_dst_temper, dev_src_temper, stream);
+			heat_compute(dev_adj_ell_array, dev_dst_temper, dev_src_temper, stream);
 		}
 		use_src = !use_src;
 		HANDLE_ERROR(cudaEventRecord(stop, 0));
@@ -464,8 +468,7 @@ int main(int argc, char* argv[]) {
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
-	HANDLE_ERROR(cudaFree(dev_adj_index));
-	HANDLE_ERROR(cudaFree(dev_adj_array));
+	HANDLE_ERROR(cudaFree(dev_adj_ell_array));
 	HANDLE_ERROR(cudaFree(dev_src_temper));
 	HANDLE_ERROR(cudaFree(dev_dst_temper));
 
