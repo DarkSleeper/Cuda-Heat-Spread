@@ -67,6 +67,7 @@ int vertex_num;
 int triangle_vertex_num;
 int max_adj_num;
 int vertex_num_aligned;
+std::vector<float> pValues;
 
 float toRadians(float degrees)
 {
@@ -83,7 +84,7 @@ void init_shader(const char* vertexPath, const char* fragmentPath, GLuint& ID);
 
 void setupVertices(ImportedModel& myModel)
 {
-	auto pValues = myModel.getOriginVertices();
+	pValues = myModel.getOriginVertices();
 	//auto tValues = myModel.getTextureCoords();
 	auto nValues = myModel.getNormals();
 
@@ -151,7 +152,7 @@ __global__ void init_temper(int heat_src_num, float* temper) {
 	}
 }
 
-__device__ int get_distance(float3 a, float3 b) {
+__device__ float get_distance(float3 a, float3 b) {
 	float3 c = make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
 	return sqrtf(c.x * c.x + c.y * c.y + c.z * c.z);
 }
