@@ -251,7 +251,7 @@ void heat_compute(int* dev_adj_index, int* dev_adj_array, float* dev_dis_array, 
 int main(int argc, char* argv[]) {
 	string model_name = "runtime/model/bunny.obj";
 	if (argc == 2) {
-		model_name = string("runtime/model/") + argv[1];
+		model_name = string("runtime/model/") + argv[1] + string(".obj");
 	}
 	stringstream help_info;
 	help_info << "Press W/A/S/D      to navigate" << endl;
