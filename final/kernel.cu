@@ -59,7 +59,7 @@ float lastY = (float)SCR_HEIGHT / 2.0;
 bool firstMouse = true;
 bool use_sync = true;
 unsigned int display_mode = 0;
-int iter_num = 1;
+int iter_num = 100;
 
 float speed = 0.016f;
 
