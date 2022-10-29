@@ -128,7 +128,7 @@ void ModelImporter::parseOBJ(const char* filePath, std::map<int, std::set<int>>&
 				idx[i] = stoi(v) - 1;
 
 				int vertRef = idx[i] * 3;   //ΪʲôҪ -1��
-				int tcRef = (stoi(t) - 1) * 2;
+				//int tcRef = (stoi(t) - 1) * 2;
 				int normRef = (stoi(n) - 1) * 3;
 
 				_triangleVerts.push_back(idx[i]);
